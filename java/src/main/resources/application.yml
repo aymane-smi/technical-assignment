@@ -1,0 +1,23 @@
+server:
+  port: 9090
+spring:
+  datasource:
+    url: jdbc:h2:mem:test
+    username: admin
+    password: admin
+    driverClassName: org.h2.Driver
+  h2:
+    console:
+      path: /h2-console
+      settings.trace: false
+      settings.web-allow-others: false
+    console.enabled: true
+  jpa:
+    spring.jpa.database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+jwt:
+  secret: 7f1195b493c858d016da01dc432d6d1106ecc99ea3c35287aba314f4f42489c2
+aymane:
+  openapi:
+    dev-url: http://localhost:9090

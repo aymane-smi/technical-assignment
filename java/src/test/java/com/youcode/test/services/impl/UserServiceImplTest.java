@@ -1,0 +1,262 @@
+package com.youcode.test.services.impl;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.youcode.test.exceptions.ResourceNotFoundException;
+import com.youcode.test.models.dto.AuthRequestDTO;
+import com.youcode.test.models.dto.AuthResponseDTO;
+import com.youcode.test.models.dto.BatchInsertionResponseDTO;
+import com.youcode.test.models.dto.UserDTO;
+import com.youcode.test.models.entities.User;
+import com.youcode.test.models.enums.ROLE;
+import com.youcode.test.repositories.UserRepository;
+import com.youcode.test.security.JWTService;
+import com.youcode.test.utils.SecurityHelpers;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.modelmapper.ModelMapper;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.*;
+
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+public class UserServiceImplTest {
+
+    @Mock
+    private UserRepository userRepository;
+    @Mock
+    private ModelMapper modelMapper;
+    @Mock
+    private PasswordEncoder passwordEncoder;
+    @Mock
+    private ObjectMapper objectMapper;
+    @Mock
+    private JWTService jwtService;
+    @InjectMocks
+    private UserServiceImpl userService;
+    private User user;
+    private UserDTO userDTO;
+
+    @BeforeEach
+    public void setUp() {
+        user = User.builder()
+                .id(1L)
+                .firstName("John")
+                .lastName("Doe")
+                .birthDate(new Date())
+                .city("New York")
+                .country("USA")
+                .avatar("avatar_url")
+                .company("ABC Company")
+                .jobPosition("Software Engineer")
+                .mobile("1234567890")
+                .username("john_doe")
+                .email("john.doe@example.com")
+                .password("password123")
+                .role(ROLE.USER)
+                .build();
+        userDTO = UserDTO.builder()
+                .id(2L)
+                .firstName("Jane")
+                .lastName("Smith")
+                .birthDate(new Date())
+                .city("Los Angeles")
+                .country("USA")
+                .avatar("avatar_url")
+                .company("XYZ Corp.")
+                .jobPosition("Data Scientist")
+                .mobile("9876543210")
+                .username("jane_smith")
+                .email("jane.smith@example.com")
+                .password("password456")
+                .role(ROLE.ADMIN)
+                .build();
+        SecurityContext securityContext = mock(SecurityContext.class);
+        Authentication authentication = mock(Authentication.class);
+        given(securityContext.getAuthentication()).willReturn(authentication);
+        SecurityContextHolder.setContext(securityContext);
+    }
+
+    @Test
+    @DisplayName("Test login method with correct credentials")
+    public void testLoginWithCorrectCredentials() {
+        user = User.builder()
+                .username("john_doe")
+                .password("$2a$10$GZ9bzNmrte3HXXvbHyOnoOC.NL7H4VLco9rOyBI2e1YJ22eQkL15u")
+                .role(ROLE.USER)
+                .build();
+        given(userRepository.findByUsername("john_doe")).willReturn(java.util.Optional.of(user));
+        given(passwordEncoder.matches("password123", user.getPassword())).willReturn(true);
+        given(jwtService.GenerateToken(user)).willReturn("sample_token");
+        AuthRequestDTO authRequest = new AuthRequestDTO("john_doe", "password123");
+        AuthResponseDTO authResponse = userService.login(authRequest);
+        assertEquals("USER", authResponse.getRole());
+    }
+
+
+    @Test
+    @DisplayName("Test findByUsername method when the username is valid")
+    public void testFindByUsernameSuccess() {
+        String username = "john_doe";
+        given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
+        User foundUser = userService.findByUsername(username);
+        verify(userRepository).findByUsername(username);
+        assertThat(foundUser).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Test findByUsername method when the username is not valid")
+    public void testFindByUsername() {
+        String username = "jjjjjj";
+        given(userRepository.findByUsername(username)).willReturn(Optional.empty());
+        assertThrows(UsernameNotFoundException.class, () -> userService.findByUsername(username));
+        verify(userRepository).findByUsername(username);
+    }
+
+    @Test
+    @DisplayName("Test loadUserByUsername method when the user is enabled")
+    public void testLoadUserByUsernameSuccess() {
+        String username = "john_doe";
+        given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
+        UserDetails userDetails = userService.loadUserByUsername(username);
+        verify(userRepository).findByUsername(username);
+        assertThat(userDetails).isNotNull();
+        assertThat(userDetails.getUsername()).isEqualTo(user.getUsername());
+        assertThat(userDetails.getPassword()).isEqualTo(user.getPassword());
+    }
+    @Test
+    @DisplayName("Test loadUserByUsername method when the user is not found")
+    public void testLoadUserByUsernameNotFound() {
+        String username = "non_existing_user";
+        given(userRepository.findByUsername(username)).willReturn(Optional.empty());
+        assertThrows(UsernameNotFoundException.class, () -> userService.loadUserByUsername(username));
+        verify(userRepository).findByUsername(username);
+    }
+
+    @Test
+    @DisplayName("Test login method with incorrect password")
+    public void testLoginWithIncorrectPassword() {
+        AuthRequestDTO authRequest = new AuthRequestDTO("john_doe", "incorrect_password");
+        given(userRepository.findByUsername(authRequest.getUsername())).willReturn(Optional.of(user));
+        assertThrows(InsufficientAuthenticationException.class, () -> userService.login(authRequest));
+        verify(userRepository).findByUsername(authRequest.getUsername());
+    }
+
+    @Test
+    @DisplayName("Test login method with non-existing username")
+    public void testLoginWithNonExistingUsername() {
+        AuthRequestDTO authRequest = new AuthRequestDTO("non_existing_user", "password123");
+        given(userRepository.findByUsername(authRequest.getUsername())).willReturn(Optional.empty());
+        assertThrows(UsernameNotFoundException.class, () -> userService.login(authRequest));
+        verify(userRepository).findByUsername(authRequest.getUsername());
+    }
+
+    @Test
+    @DisplayName("Test getProfile method when user does not exist")
+    public void testGetProfileUserNotFound() {
+        String username = "non_existing_user";
+        given(userRepository.findByUsername(username)).willReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> userService.getProfile(username));
+    }
+
+    @Test
+    @DisplayName("Test getProfile method when user exists")
+    public void testGetProfileUserExists() {
+        given(userRepository.findByUsername(anyString())).willReturn(Optional.of(user));
+        given(modelMapper.map(user, UserDTO.class)).willReturn(userDTO);
+        UserDTO result = userService.getProfile("john_doe");
+       assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Test getAuthenticatedProfile method")
+    public void testGetAuthenticatedProfile() {
+        UserDetails userDetails = mock(UserDetails.class);
+        when(userDetails.getUsername()).thenReturn("john_doe");
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getPrincipal()).thenReturn(userDetails);
+        SecurityContext securityContext = mock(SecurityContext.class);
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        SecurityContextHolder.setContext(securityContext);
+        given(userRepository.findByUsername("john_doe")).willReturn(Optional.of(user));
+        given(modelMapper.map(user, UserDTO.class)).willReturn(userDTO);
+        UserDTO result = userService.getAuthenticatedProfile();
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Test getAuthenticatedProfile method when user does not exist")
+    public void testGetAuthenticatedProfileUserNotFound() {
+        String username = "non_existing_user";
+        when(SecurityHelpers.retrieveUsername()).thenReturn(username);
+        given(userRepository.findByUsername(username)).willReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> userService.getAuthenticatedProfile());
+    }
+
+    @Test
+    @DisplayName("Test batchInsertUsers method")
+    public void testBatchInsertUsers() throws IOException {
+        String jsonData = "[{\"username\":\"user1\", \"password\":\"pass1\"}, {\"username\":\"user2\", \"password\":\"pass2\"}]";
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonData.getBytes());
+        List<User> users = Arrays.asList(
+                User.builder().username("user1").password("pass1").build(),
+                User.builder().username("user2").password("pass2").build()
+        );
+        when(objectMapper.readValue(any(InputStream.class), any(TypeReference.class))).thenReturn(users);
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        BatchInsertionResponseDTO response = userService.batchInsertUsers(inputStream);
+        assertEquals(2, response.getSuccessfullyInsertedRows());
+        assertEquals(0, response.getFailedToInsertRows());
+        verify(userRepository, times(2)).save(any(User.class));
+    }
+
+    private List<User> generateMockUsers(int count) {
+        Random random = new Random();
+        List<User> users = new ArrayList<>();
+
+        for (int i = 0; i < count; i++) {
+            User user = User.builder()
+                    .firstName("user" + (i + 1) + "First")
+                    .lastName("user" + (i + 1) + "Last")
+                    .city("user" + (i + 1) + "City")
+                    .country("user" + (i + 1) + "Country")
+                    .avatar("avatar_url_" + i)
+                    .company("user" + (i + 1) + "Company")
+                    .jobPosition("user" + (i + 1) + "Position")
+                    .mobile(String.valueOf(1111111111 + i))
+                    .username("user" + i)
+                    .email("user" + i + "@example.com")
+                    .password("password" + i)
+                    .role(ROLE.values()[random.nextInt(ROLE.values().length)])
+                    .build();
+            users.add(user);
+        }
+
+        return users;
+    }
+
+}
