@@ -67,3 +67,6 @@
 | :-------- | :------- | :-------------------------------- |
 | `file`      | `file` | **Required**. json file with users data |
 
+## Note
+
+if you want to change `h2` configuration or even the port/jwt_secret pleqse check `application.yml` in the resources folder
