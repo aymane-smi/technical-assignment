@@ -25,8 +25,8 @@ public class OpenAPIConfig {
 
 
         Contact contact = new Contact();
-        contact.setEmail("ahmedennaime20@gmail.com");
-        contact.setName("AhmedEnnaime");
+        contact.setEmail("aymanebel2@outlook.fr");
+        contact.setName("aymane");
 
 
         Info info = new Info()
